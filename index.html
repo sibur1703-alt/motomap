@@ -7,12 +7,17 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        body { margin: 0; padding: 0; }
+        body { margin: 0; padding: 0; font-family: sans-serif; }
         #map { position: absolute; top: 0; bottom: 0; width: 100%; }
         .moto-marker { width: 20px; height: 20px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 8px rgba(0,0,0,0.4); }
         .leaflet-div-icon { background: transparent; border: none; }
         .ride-icon { font-size: 28px; text-shadow: 0 0 10px #FF5722; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
+        
+        /* Стили для карточки */
+        .info-card h3 { margin: 0 0 5px 0; font-size: 16px; }
+        .info-card p { margin: 2px 0; font-size: 13px; color: #444; }
+        .info-btn { width: 100%; padding: 8px; margin-top: 10px; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -20,70 +25,113 @@
 <script>
     const tg = window.Telegram.WebApp;
     tg.expand();
-    const map = L.map('map').setView([55.7558, 37.6173], 10);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
+    // Создаем слои для фильтров
+    const map = L.map('map').setView([55.7558, 37.6173], 10);
+    const lightMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
+
+    const pilotsLayer = L.layerGroup().addTo(map);
+    const passengersLayer = L.layerGroup().addTo(map);
+    const ridesLayer = L.layerGroup().addTo(map);
+
+    // Добавляем контроллер слоев (Фильтр) в угол карты
+    const overlays = {
+        "🏍 Пилоты": pilotsLayer,
+        "🎒 Двойки": passengersLayer,
+        "🔥 Прохваты": ridesLayer
+    };
+    L.control.layers(null, overlays, {collapsed: false}).addTo(map);
+
+    // --- ЛОКАЦИЯ ЮЗЕРА ---
+    map.locate({setView: true, maxZoom: 14});
+    map.on('locationfound', function(e) {
+        L.marker(e.latlng).addTo(map).bindPopup("📍 Вы находитесь здесь!").openPopup();
+        L.circle(e.latlng, e.accuracy / 2).addTo(map);
+    });
 
     const urlParams = new URLSearchParams(window.location.search);
     const encodedData = urlParams.get('data');
-    const mode = urlParams.get('mode'); // Если mode === 'create_ride', меняем логику клика
+    const mode = urlParams.get('mode'); 
     
     let dataObj = {users: [], rides: []};
     if (encodedData) {
-        try {
-            dataObj = JSON.parse(decodeURIComponent(escape(atob(encodedData))));
-        } catch (e) { console.error("Ошибка чтения данных", e); }
+        try { dataObj = JSON.parse(decodeURIComponent(escape(atob(encodedData)))); } 
+        catch (e) { console.error("Ошибка чтения данных", e); }
     }
 
-    // --- РАССТАВЛЯЕМ ЮЗЕРОВ ---
+    // --- РАССТАВЛЯЕМ ЮЗЕРОВ (С ИНФОРМАЦИЕЙ ИЗ АНКЕТЫ) ---
     dataObj.users.forEach(user => {
-        const markerColor = user.role === 'pilot' ? '#1E88E5' : '#E53935';
+        const isPilot = user.role === 'pilot';
+        const markerColor = isPilot ? '#1E88E5' : '#E53935';
+        const roleText = isPilot ? '🏍 Пилот' : '🎒 Двойка';
+        
         const customIcon = L.divIcon({
             html: `<div class='moto-marker' style='background-color: ${markerColor};'></div>`,
             className: 'leaflet-div-icon', iconSize: [24, 24], iconAnchor: [12, 12]
         });
-        L.marker([user.lat, user.lon], {icon: customIcon})
-            .bindPopup(`<b>${user.name}</b><br><button onclick="inviteUser(${user.user_id})">Позвать</button>`)
-            .addTo(map);
+
+        // Расширенная карточка
+        let details = "";
+        if (isPilot) {
+            details += `<p><b>Мот/Опыт:</b> ${user.moto_info || '?'}</p>`;
+        } else {
+            details += `<p><b>Рост/Вес:</b> ${user.height || '?'}/${user.weight || '?'}</p>`;
+            details += `<p><b>Экип:</b> ${user.has_gear || '?'}</p>`;
+        }
+        details += `<p><b>Ищет:</b> ${user.preferences || 'Не указано'}</p>`;
+        details += `<p><b>О себе:</b> ${user.bio || ''}</p>`;
+
+        const popupHTML = `
+            <div class="info-card" style="min-width: 160px;">
+                <h3 style="color: ${markerColor};">${user.name}</h3>
+                <p><b>Рейтинг:</b> ⭐️ ${user.rating || 0}</p>
+                ${details}
+                <button class="info-btn" style="background-color: ${markerColor};" onclick="inviteUser(${user.user_id})">
+                    Позвать кататься
+                </button>
+            </div>
+        `;
+
+        const marker = L.marker([user.lat, user.lon], {icon: customIcon}).bindPopup(popupHTML);
+        
+        // Добавляем в нужный слой фильтра
+        if (isPilot) { pilotsLayer.addLayer(marker); } 
+        else { passengersLayer.addLayer(marker); }
     });
 
-    // --- РАССТАВЛЯЕМ ПРОХВАТЫ (ОГОНЬКИ) ---
+    // --- РАССТАВЛЯЕМ ПРОХВАТЫ ---
     dataObj.rides.forEach(ride => {
         const rideIcon = L.divIcon({
             html: `<div class='ride-icon'>🔥</div>`,
             className: 'leaflet-div-icon', iconSize: [30, 30], iconAnchor: [15, 15]
         });
         const popupHTML = `
-            <div style="text-align: center; min-width: 150px;">
-                <h3 style="margin: 0 0 5px 0; color: #E65100;">${ride.title}</h3>
-                <p style="margin: 0;">📅 ${ride.ride_time}</p>
-                <p style="margin: 0;">📈 Темп: ${ride.tempo}</p>
-                <p style="margin: 0; font-size: 12px; color: gray;">Орг: ${ride.creator_name}</p>
-                <button onclick="joinRide(${ride.id})" style="margin-top: 10px; width: 100%; padding: 8px; background-color: #FF9800; color: white; border: none; border-radius: 6px; font-weight: bold;">
+            <div class="info-card" style="text-align: center; min-width: 150px;">
+                <h3 style="color: #E65100;">${ride.title}</h3>
+                <p>📅 ${ride.ride_time} | 📈 ${ride.tempo}</p>
+                <p style="color: gray;">Орг: ${ride.creator_name}</p>
+                <p>👥 <b>Уже едут: ${ride.participants_count || 0}</b></p>
+                <button class="info-btn" style="background-color: #FF9800;" onclick="joinRide(${ride.id})">
                     ✅ Присоединиться
                 </button>
             </div>
         `;
-        L.marker([ride.lat, ride.lon], {icon: rideIcon}).bindPopup(popupHTML).addTo(map);
+        const marker = L.marker([ride.lat, ride.lon], {icon: rideIcon}).bindPopup(popupHTML);
+        ridesLayer.addLayer(marker);
     });
 
-    // --- ОБРАБОТЧИКИ КНОПОК ---
+    // --- ФУНКЦИИ КНОПОК И КЛИКОВ ---
     window.joinRide = function(rideId) {
-        tg.sendData(JSON.stringify({ action: 'join_ride', ride_id: rideId }));
-        tg.close();
+        tg.sendData(JSON.stringify({ action: 'join_ride', ride_id: rideId })); tg.close();
     };
     window.inviteUser = function(userId) {
-        tg.sendData(JSON.stringify({ action: 'invite_from_map', target_id: userId }));
-        tg.close();
+        tg.sendData(JSON.stringify({ action: 'invite_from_map', target_id: userId })); tg.close();
     };
 
-    // --- КЛИК ПО КАРТЕ ---
     map.on('click', function(e) {
         if (mode === 'create_ride') {
-            // Режим создания прохвата
             tg.sendData(JSON.stringify({ action: 'create_ride_location', lat: e.latlng.lat, lon: e.latlng.lng }));
         } else {
-            // Обычный режим (обновить себя)
             tg.sendData(JSON.stringify({ action: 'set_location', lat: e.latlng.lat, lon: e.latlng.lng }));
         }
         tg.close(); 
