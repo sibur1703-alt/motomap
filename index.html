@@ -14,7 +14,6 @@
         .ride-icon { font-size: 28px; text-shadow: 0 0 10px #FF5722; animation: pulse 1.5s infinite; }
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.2); } 100% { transform: scale(1); } }
         
-        /* Стили для карточки */
         .info-card h3 { margin: 0 0 5px 0; font-size: 16px; }
         .info-card p { margin: 2px 0; font-size: 13px; color: #444; }
         .info-btn { width: 100%; padding: 8px; margin-top: 10px; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
@@ -26,15 +25,13 @@
     const tg = window.Telegram.WebApp;
     tg.expand();
 
-    // Создаем слои для фильтров
     const map = L.map('map').setView([55.7558, 37.6173], 10);
-    const lightMap = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
 
     const pilotsLayer = L.layerGroup().addTo(map);
     const passengersLayer = L.layerGroup().addTo(map);
     const ridesLayer = L.layerGroup().addTo(map);
 
-    // Добавляем контроллер слоев (Фильтр) в угол карты
     const overlays = {
         "🏍 Пилоты": pilotsLayer,
         "🎒 Двойки": passengersLayer,
@@ -42,7 +39,6 @@
     };
     L.control.layers(null, overlays, {collapsed: false}).addTo(map);
 
-    // --- ЛОКАЦИЯ ЮЗЕРА ---
     map.locate({setView: true, maxZoom: 14});
     map.on('locationfound', function(e) {
         L.marker(e.latlng).addTo(map).bindPopup("📍 Вы находитесь здесь!").openPopup();
@@ -59,21 +55,18 @@
         catch (e) { console.error("Ошибка чтения данных", e); }
     }
 
-    // --- РАССТАВЛЯЕМ ЮЗЕРОВ (С ИНФОРМАЦИЕЙ ИЗ АНКЕТЫ) ---
     dataObj.users.forEach(user => {
         const isPilot = user.role === 'pilot';
         const markerColor = isPilot ? '#1E88E5' : '#E53935';
-        const roleText = isPilot ? '🏍 Пилот' : '🎒 Двойка';
         
         const customIcon = L.divIcon({
             html: `<div class='moto-marker' style='background-color: ${markerColor};'></div>`,
             className: 'leaflet-div-icon', iconSize: [24, 24], iconAnchor: [12, 12]
         });
 
-        // Расширенная карточка
         let details = "";
         if (isPilot) {
-            details += `<p><b>Мот/Опыт:</b> ${user.moto_info || '?'}</p>`;
+            details += `<p><b>Мот:</b> ${user.moto_info || '?'}</p>`;
         } else {
             details += `<p><b>Рост/Вес:</b> ${user.height || '?'}/${user.weight || '?'}</p>`;
             details += `<p><b>Экип:</b> ${user.has_gear || '?'}</p>`;
@@ -94,12 +87,10 @@
 
         const marker = L.marker([user.lat, user.lon], {icon: customIcon}).bindPopup(popupHTML);
         
-        // Добавляем в нужный слой фильтра
         if (isPilot) { pilotsLayer.addLayer(marker); } 
         else { passengersLayer.addLayer(marker); }
     });
 
-    // --- РАССТАВЛЯЕМ ПРОХВАТЫ ---
     dataObj.rides.forEach(ride => {
         const rideIcon = L.divIcon({
             html: `<div class='ride-icon'>🔥</div>`,
@@ -120,7 +111,6 @@
         ridesLayer.addLayer(marker);
     });
 
-    // --- ФУНКЦИИ КНОПОК И КЛИКОВ ---
     window.joinRide = function(rideId) {
         tg.sendData(JSON.stringify({ action: 'join_ride', ride_id: rideId })); tg.close();
     };
