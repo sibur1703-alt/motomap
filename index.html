@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Moto Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        
+        .moto-marker {
+            background-color: #e53935;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 0 8px rgba(0,0,0,0.4);
+        }
+        
+        .leaflet-div-icon {
+            background: transparent;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+    // Инициализируем Telegram Web App
+    const tg = window.Telegram.WebApp;
+    tg.expand(); // Разворачиваем карту на весь экран телефона
+
+    // Инициализация карты (Москва по дефолту)
+    const map = L.map('map').setView([55.7558, 37.6173], 10);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+        subdomains: 'abcd',
+        maxZoom: 20
+    }).addTo(map);
+
+    // --- МАГИЯ: Получаем данные юзеров прямо из ссылки ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const encodedData = urlParams.get('data');
+    
+    let users = [];
+    if (encodedData) {
+        try {
+            // Расшифровываем данные, которые передаст бот
+            users = JSON.parse(decodeURIComponent(escape(atob(encodedData))));
+        } catch (e) {
+            console.error("Ошибка чтения данных", e);
+        }
+    }
+
+    // Расставляем маркеров на карту
+    users.forEach(user => {
+        const customIcon = L.divIcon({
+            html: "<div class='moto-marker'></div>",
+            className: 'leaflet-div-icon',
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+
+        L.marker([user.lat, user.lon], {icon: customIcon})
+            .bindPopup(`<h3>${user.name}</h3><p>Роль: ${user.role}</p>`)
+            .addTo(map);
+    });
+
+    // --- ОБРАТНАЯ СВЯЗЬ: Отправка координат в бота при клике на карту ---
+    map.on('click', function(e) {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+        // Отправляем JSON обратно в Telegram бота
+        tg.sendData(JSON.stringify({action: 'set_location', lat: lat, lon: lng}));
+        tg.close(); // Закрываем карту после выбора
+    });
+</script>
+</body>
+</html>
