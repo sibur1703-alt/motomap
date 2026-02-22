@@ -47,7 +47,7 @@
 
     const urlParams = new URLSearchParams(window.location.search);
     const encodedData = urlParams.get('data');
-    const mode = urlParams.get('mode'); 
+    const mode = urlParams.get('mode'); // Теперь mode читается 100% корректно
     
     let dataObj = {users: [], rides: []};
     if (encodedData) {
@@ -55,6 +55,7 @@
         catch (e) { console.error("Ошибка чтения данных", e); }
     }
 
+    // Отрисовка юзеров
     dataObj.users.forEach(user => {
         const isPilot = user.role === 'pilot';
         const markerColor = isPilot ? '#1E88E5' : '#E53935';
@@ -91,6 +92,7 @@
         else { passengersLayer.addLayer(marker); }
     });
 
+    // Отрисовка прохватов
     dataObj.rides.forEach(ride => {
         const rideIcon = L.divIcon({
             html: `<div class='ride-icon'>🔥</div>`,
@@ -118,13 +120,40 @@
         tg.sendData(JSON.stringify({ action: 'invite_from_map', target_id: userId })); tg.close();
     };
 
+    // --- ЛОГИКА ВЫБОРА ТОЧКИ (С ПОДТВЕРЖДЕНИЕМ) ---
+    let tempMarker = null;
+    let selectedLatLng = null;
+
+    // Настраиваем Главную кнопку Телеграма
+    if (mode === 'create_ride') {
+        tg.MainButton.setText("ПОДТВЕРДИТЬ ТОЧКУ СБОРА");
+        tg.MainButton.color = "#FF9800"; // Оранжевый цвет
+        tg.MainButton.onClick(function() {
+            if (selectedLatLng) {
+                tg.sendData(JSON.stringify({ action: 'create_ride_location', lat: selectedLatLng.lat, lon: selectedLatLng.lng }));
+                tg.close();
+            }
+        });
+    } else {
+        // Если это просто обновление геопозиции
+        tg.MainButton.setText("ОБНОВИТЬ СВОИ КООРДИНАТЫ");
+        tg.MainButton.onClick(function() {
+            if (selectedLatLng) {
+                tg.sendData(JSON.stringify({ action: 'set_location', lat: selectedLatLng.lat, lon: selectedLatLng.lng }));
+                tg.close();
+            }
+        });
+    }
+
     map.on('click', function(e) {
-        if (mode === 'create_ride') {
-            tg.sendData(JSON.stringify({ action: 'create_ride_location', lat: e.latlng.lat, lon: e.latlng.lng }));
-        } else {
-            tg.sendData(JSON.stringify({ action: 'set_location', lat: e.latlng.lat, lon: e.latlng.lng }));
-        }
-        tg.close(); 
+        selectedLatLng = e.latlng;
+        if (tempMarker) { map.removeLayer(tempMarker); }
+        
+        // Рисуем временную черную метку туда, куда ткнул юзер
+        tempMarker = L.marker(selectedLatLng).addTo(map).bindPopup("Сохранить здесь?").openPopup();
+        
+        // Показываем кнопку внизу экрана!
+        tg.MainButton.show();
     });
 </script>
 </body>
